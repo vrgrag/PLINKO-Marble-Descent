@@ -1,0 +1,54 @@
+name: marble_descent
+description: "Marble Descent - endless neon arcade"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.3.3
+  webview_flutter: ^4.10.0
+  connectivity_plus: ^6.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "assets/Icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#0A0A1F"
+  adaptive_icon_foreground: "assets/Icon.png"
+  adaptive_icon_foreground_inset: 0
+  remove_alpha_ios: true
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/bg1_asset.webp
+    - assets/bg2_asset.webp
+    - assets/bg3_asset.webp
+    - assets/crystal_gem_asset.webp
+    - assets/Game_Name.webp
+    - assets/geometric_square_asset.webp
+    - assets/hexagonal_obstacle_asset.webp
+    - assets/Horizontal_Loading_Screen.webp
+    - assets/Icon.png
+    - assets/neon_direction_asset.webp
+    - assets/shaped_obstacle_asset.webp
+    - assets/sphere_asset.webp
+    - assets/triangular_obstacle_asset.webp
+    - assets/Vertical_Loading_Screen.webp
+    - assets/vertical_neon_wall_asset.webp
