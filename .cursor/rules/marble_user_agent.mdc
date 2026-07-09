@@ -1,0 +1,34 @@
+---
+description: Marble Descent User-Agent policy — arcade/plinko theme
+globs: lib/relays/ua_stamp.dart,lib/veil/web_veil.dart
+alwaysApply: false
+---
+
+# User-Agent policy — Marble Descent
+
+Marble Descent is a **neon plinko / marble-drop arcade**, NOT a
+slot-machine theme. The User-Agent must therefore stay a plain,
+realistic Android Chrome string — WITHOUT the `appid/… appname/…`
+suffix that the account's slot-themed games (Zeus / Joker / Magma
+/ Egypt) carry.
+
+Rules:
+
+- Format: `Mozilla/5.0 (Linux; Android <ver>; <brand> <model>
+  Build/<tag>) AppleWebKit/537.36 (KHTML, like Gecko)
+  Chrome/149.0.7220.24 Mobile Safari/537.36`
+- Chrome major version is bumped to **149** (encoded in
+  `lib/glyph/glyph_pack.dart`).
+- The version fragments are decoded through `glyph_codec` — never
+  hard-coded at the call site.
+- The device brand / model / build tag come from `device_info_plus`
+  at first call to `UaStampClient.warmUp()`.
+- Both the HTTP client (`marbleWire`) AND the WebView
+  (`_web.setUserAgent(marbleWire.stamp)`) MUST use the same string.
+- No `Dart/…`, `Flutter/…`, `WebView` / `wv/`, or package-name
+  tokens anywhere in the UA.
+
+If a future project on this account turns Marble Descent into a
+slot theme (unlikely), consult
+`.cursor/rules/marble_gray_guide.md` and the account-wide
+`gray_user_agent.mdc` before adding an `appid` / `appname` suffix.

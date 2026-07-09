@@ -1,36 +1,57 @@
 name: marble_descent
-description: "Marble Descent - endless neon arcade"
+description: "Marble Descent — neon plinko-style marble arena"
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.10.8
+  sdk: ^3.9.0
 
 dependencies:
   flutter:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
-  shared_preferences: ^2.3.3
-  webview_flutter: ^4.10.0
-  connectivity_plus: ^6.1.0
+
+  # Local storage — shell config + game progress
+  shared_preferences: ^2.5.4
+  flutter_secure_storage: ^10.0.0-beta.4
+
+  # WebView (immersive shell)
+  webview_flutter: ^4.13.0
+  webview_flutter_android: ^4.10.0
+
+  # Networking / diagnostics
+  connectivity_plus: ^7.0.0
+  http: ^1.5.0
+  url_launcher: ^6.3.2
+  device_info_plus: ^12.0.0
+
+  # Attribution + push
+  appsflyer_sdk: ^6.17.2
+  firebase_core: ^4.2.0
+  firebase_messaging: ^16.1.0
+  firebase_app_check: ^0.4.1
+  flutter_local_notifications: ^19.5.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   flutter_lints: ^6.0.0
-  flutter_launcher_icons: ^0.14.1
+  flutter_launcher_icons: ^0.14.4
 
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
-  image_path: "assets/Icon.png"
-  min_sdk_android: 21
-  adaptive_icon_background: "#0A0A1F"
-  adaptive_icon_foreground: "assets/Icon.png"
-  adaptive_icon_foreground_inset: 0
+  image_path: "assets/icon2.png"
+  min_sdk_android: 30
+  adaptive_icon_background: "#06061A"
+  adaptive_icon_foreground: "assets/icon2.png"
+  # 16 % keeps the artwork inside the Android 8+ adaptive-icon safe
+  # zone (66 dp of the 108 dp canvas) without shrinking it into a
+  # tiny disc. Anything above ~22 % ends up visibly cropped.
+  adaptive_icon_foreground_inset: 16
+  adaptive_icon_monochrome: "assets/icon2.png"
   remove_alpha_ios: true
 
 flutter:
@@ -44,11 +65,11 @@ flutter:
     - assets/Game_Name.webp
     - assets/geometric_square_asset.webp
     - assets/hexagonal_obstacle_asset.webp
-    - assets/Horizontal_Loading_Screen.webp
     - assets/Icon.png
+    - assets/icon2.png
     - assets/neon_direction_asset.webp
     - assets/shaped_obstacle_asset.webp
     - assets/sphere_asset.webp
     - assets/triangular_obstacle_asset.webp
-    - assets/Vertical_Loading_Screen.webp
     - assets/vertical_neon_wall_asset.webp
+    - assets/marbledesc_veil/
