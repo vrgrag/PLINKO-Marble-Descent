@@ -149,82 +149,27 @@ class AttributionRelay {
   /// Builds the merged verdict request body.
   ///
   /// The AppsFlyer conversion payload is forwarded VERBATIM — no field
-  /// is renamed / dropped / added except for the seven device-side
-  /// fields defined below. Do NOT filter the attribution data — the
-  /// backend needs the full payload to route correctly.
-  ///
-  /// When [injectTestAttribution] is true (QA override), a synthetic
-  /// Non-organic payload is added only if the SDK never delivered one.
-  /// Real attribution always takes precedence — production installs
-  /// via OneLink are unaffected.
+  /// is renamed / dropped / added / synthesised, except for the device-
+  /// side fields appended below (af_id, bundle_id, os, store_id, locale,
+  /// push_token, firebase_project_id). Per the config contract the
+  /// conversion-data key list must NEVER be modified: the backend alone
+  /// decides gray vs white from whatever the SDK actually delivered.
   Future<Map<String, dynamic>> composeVerdictBody({
     required String locale,
     String? pushToken,
-    bool injectTestAttribution = false,
   }) async {
     final Map<String, dynamic> body = <String, dynamic>{};
 
     debugPrint('$_tag composeVerdictBody: installData=$_installData  deepLink=$_deepLinkData  appOpen=$_appOpenData');
 
+    // Merge order per config contract §2: install conversion (verbatim),
+    // then deep-link + app-open with first-write-wins on collisions.
+    // No key is fabricated — an organic install stays organic.
     if (_installData != null) body.addAll(_installData!);
     _deepLinkData?.forEach(
         (String k, dynamic v) => body.putIfAbsent(k, () => v));
     _appOpenData?.forEach(
         (String k, dynamic v) => body.putIfAbsent(k, () => v));
-
-    // A deep-link click / app-open attribution IS a non-organic
-    // event, but the SDK's DeepLinkResult / onAppOpenAttribution
-    // payloads don't always carry an `af_status` field. Fill it in
-    // so the backend's paid-user check passes even when only the
-    // deep-link callback fired (warm click on installed app).
-    final bool hasDeepSignal = _deepLinkData != null || _appOpenData != null;
-    if (hasDeepSignal && !body.containsKey('af_status')) {
-      body['af_status'] = 'Non-organic';
-      debugPrint('$_tag deep-link signal present — synthesised af_status=Non-organic');
-    }
-    if (hasDeepSignal && !body.containsKey('is_first_launch')) {
-      body['is_first_launch'] = false;
-    }
-
-    // QA override: only inject when nothing real came in.
-    final bool haveRealAttribution =
-        body.containsKey('af_status') || body.containsKey('media_source');
-    debugPrint('$_tag haveRealAttribution=$haveRealAttribution  injectTest=$injectTestAttribution');
-
-    if (injectTestAttribution && !haveRealAttribution) {
-      debugPrint('$_tag Injecting QA synthetic Non-organic attribution');
-      body['af_status'] = 'Non-organic';
-      body['media_source'] = 'my_media_source';
-      body['campaign'] =
-          'testsub_testsub2_testsub_testsub_testsub_testsub_testsub1 #extra';
-      body['campaign_id'] = 'testsub4';
-      body['agency'] = 'Test Agency';
-      body['is_first_launch'] = true;
-      body['is_paid'] = true;
-
-      // OneLink custom sub-parameters — partner site verifies these
-      // one by one in the "Передача параметров" screen.
-      body['af_sub1'] = 'testsub1';
-      body['af_sub2'] = 'testsub2';
-      body['af_sub3'] = 'testsub3';
-      body['af_sub4'] = 'testsub4';
-      body['af_sub5'] = 'testsub5';
-
-      // Extra params requested by the partner integration checklist.
-      body['af_adset'] = 'testextra2';
-      body['af_ad'] = 'testextra3';
-      body['af_ad_id'] = 'testextra4';
-      body['af_adset_id'] = 'testextra5';
-      body['af_channel'] = 'testextra6';
-
-      // Deep-link fields — REQUIRED for the "Параметры диплинка" check
-      // to turn green. The partner backend rejects the config request
-      // if either of these is missing.
-      body['deep_link_value'] = 'deep_link_test';
-      body['deep_link_sub1'] = 'deep_test_sub1';
-      body['deep_link_sub2'] = 'deep_test_sub2';
-      body['deep_link_sub3'] = 'deep_test_sub3';
-    }
 
     body['af_id'] = await uid() ?? '';
     body['bundle_id'] = MarbleIdentity.packageBundle;

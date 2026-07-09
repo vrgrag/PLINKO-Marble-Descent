@@ -42,7 +42,7 @@ const List<int> _webkitTag = <int>[244, 222, 114, 174, 100, 87];
 // attributionKey  <=  AppsFlyer Dev Key (encoded)
 const List<int> _attributionKey = <int>[
   149, 172, 9, 182, 5, 15, 177, 186, 229, 164, 63, 146, 91, 149, 41, 114,
-  198, 86, 40, 8, 64,
+  198, 86, 40, 8, 64, 188,
 ];
 
 // messagingProject  <=  Firebase project number (encoded)

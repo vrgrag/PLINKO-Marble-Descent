@@ -29,14 +29,13 @@ class LocalStore {
   static const String _kPushGranted = 'mrb_push_granted';
   static const String _kPushOsDenied = 'mrb_push_os_denied';
   static const String _kPushColdLink = 'mrb_push_cold_blob';
-  static const String _kTestShellOverride = 'mrb_shell_test_override';
 
   late final SharedPreferences _prefs;
   final FlutterSecureStorage _secure;
 
   Future<void> warmUp() async {
     _prefs = await SharedPreferences.getInstance();
-    debugPrint('$_tag warmUp() done — mode="${_prefs.getString(_kMode)}"  testOverride=${_prefs.getBool(_kTestShellOverride)}');
+    debugPrint('$_tag warmUp() done — mode="${_prefs.getString(_kMode)}"');
   }
 
   // ── Runtime mode ──
@@ -131,22 +130,9 @@ class LocalStore {
     return v;
   }
 
-  // ── QA / testing override ──
-  //
-  // When true, RoutePilot ignores the persisted runtime mode and the
-  // attribution relay injects synthetic Non-organic fields into the
-  // verdict body. Toggled from a long-press on the loading screen
-  // title (see RoutePilot). Never surface in the store listing UI.
-  bool isTestShellOverride() =>
-      _prefs.getBool(_kTestShellOverride) ?? false;
-
-  Future<void> setTestShellOverride(bool value) {
-    debugPrint('$_tag setTestShellOverride($value)');
-    return _prefs.setBool(_kTestShellOverride, value);
-  }
-
-  /// Full-reset used by the QA override — clears runtime mode and the
-  /// cached destination so the next boot goes through the fresh path.
+  /// Full reset — clears runtime mode, cached destination + expiry and
+  /// any stashed push link so the next boot goes through the fresh path.
+  /// Used when a OneLink open re-opens the gate.
   Future<void> resetForFreshBoot() async {
     debugPrint('$_tag resetForFreshBoot()');
     await _prefs.remove(_kMode);

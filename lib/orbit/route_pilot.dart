@@ -36,7 +36,10 @@ import 'asset_book.dart';
 //   fresh + no link  → straight into MenuScreen (native), commit
 //                      native mode. No attribution, no network.
 //   shell            → (offline) OfflineVeil
-//                    → (online)  push cold-link wins, else re-verdict
+//                    → (online)  push cold-link wins; else if the cached
+//                                url is still within its `expires` TTL we
+//                                load it WITHOUT a network call; only an
+//                                expired/absent link triggers a re-verdict
 //   native           → straight into MenuScreen (no network needed)
 //
 // [BACKEND-DECIDES CONTRACT — per android_gray_guide.md §"Gray Flow
@@ -86,7 +89,6 @@ class _RoutePilotState extends State<RoutePilot>
   double _progress = 0.05;
   bool _routed = false;
   late final AnimationController _dotAnim;
-  late final bool _testOverride;
 
   @override
   void initState() {
@@ -95,18 +97,14 @@ class _RoutePilotState extends State<RoutePilot>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
-    // Strict production contract on every build:
+    // Strict production contract on every build — no QA shortcuts:
     //   • real Non-organic attribution → gray (WebView shell)
     //   • organic install (no OneLink)  → white (native game)
     //   • no-internet                   → OfflineVeil with Retry
-    //
-    // The QA long-press on the loading title still forces gray for
-    // manual testing without a OneLink click — but nothing is
-    // forced automatically. This matches the AdventureRoad flow.
-    _testOverride = widget.store.isTestShellOverride();
+    // The backend alone decides gray vs white from the REAL AppsFlyer
+    // conversion data — the client never fabricates or injects it.
     debugPrint('[RoutePilot] boot • kDebugMode=$kDebugMode '
-        '• storedMode=${widget.store.readMode()} '
-        '• testOverride=$_testOverride');
+        '• storedMode=${widget.store.readMode()}');
     widget.pushRelay.onTokenRotated = _repostAfterTokenSwap;
     _drive();
   }
@@ -142,7 +140,7 @@ class _RoutePilotState extends State<RoutePilot>
   }
 
   Future<void> _drive() async {
-    debugPrint('[RoutePilot] _drive() start — testOverride=$_testOverride');
+    debugPrint('[RoutePilot] _drive() start');
     await widget.pushRelay.boot();
     _lift(0.2);
 
@@ -155,10 +153,9 @@ class _RoutePilotState extends State<RoutePilot>
       await widget.store.resetForFreshBoot();
     }
 
-    // QA override / deep-link → always run the full fresh path.
-    final RuntimeMode mode = (_testOverride || fromDeepLink)
-        ? RuntimeMode.fresh
-        : widget.store.readMode();
+    // Deep-link launch → always run the full fresh path.
+    final RuntimeMode mode =
+        fromDeepLink ? RuntimeMode.fresh : widget.store.readMode();
     debugPrint('[RoutePilot] mode=$mode (deepLink=$fromDeepLink)');
 
     switch (mode) {
@@ -179,8 +176,7 @@ class _RoutePilotState extends State<RoutePilot>
         // Deferred-install attribution, warm OneLink taps, and
         // real Non-organic media_source all resolve inside
         // _freshBoot() → _ask().
-        debugPrint('[RoutePilot] → freshBoot '
-            '(deepLink=$fromDeepLink override=$_testOverride)');
+        debugPrint('[RoutePilot] → freshBoot (deepLink=$fromDeepLink)');
         await _freshBoot();
         break;
     }
@@ -273,7 +269,23 @@ class _RoutePilotState extends State<RoutePilot>
     final String? cached = await widget.store.readDestination();
     debugPrint('[RoutePilot] _resumeShell: cached URL = $cached');
 
-    debugPrint('[RoutePilot] _resumeShell: kindling attribution for recheck');
+    // Config contract §"Последующие запуски": compare `expires` with the
+    // device clock BEFORE hitting the network. While the saved link is
+    // still valid we load it straight away and make no config request —
+    // a fresh POST is only sent once the TTL has lapsed. This keeps the
+    // returning-launch traffic to the backend minimal (fewer requests =
+    // less scanner surface) exactly as the spec mandates.
+    if (cached != null && cached.isNotEmpty && !widget.store.isExpired()) {
+      debugPrint('[RoutePilot] _resumeShell: cached URL still valid '
+          '(expires=${widget.store.readExpiry()}) → shell, skipping verdict');
+      _lift(1.0);
+      await _settle();
+      _toShell(cached);
+      return;
+    }
+
+    debugPrint('[RoutePilot] _resumeShell: link expired/absent — '
+        'kindling attribution for recheck');
     await widget.attribution.kindle();
     await Future.wait<void>(<Future<void>>[
       widget.attribution.awaitInstall(seconds: 10),
@@ -330,7 +342,6 @@ class _RoutePilotState extends State<RoutePilot>
         await widget.attribution.composeVerdictBody(
       locale: locale,
       pushToken: widget.pushRelay.token,
-      injectTestAttribution: _shouldInjectTestAttribution(),
     );
     return widget.verdicts.ask(body);
   }
@@ -341,52 +352,9 @@ class _RoutePilotState extends State<RoutePilot>
         await widget.attribution.composeVerdictBody(
       locale: locale,
       pushToken: token,
-      injectTestAttribution: _shouldInjectTestAttribution(),
     );
     // Fire-and-forget — the backend just needs to see the new token.
     widget.verdicts.ask(body);
-  }
-
-  /// True when the verdict body should carry the synthetic Non-organic
-  /// test attribution. Two triggers:
-  ///
-  ///   • QA long-press override (`_testOverride`) — explicit developer
-  ///     intent, works in release builds too.
-  ///   • `kDebugMode` — every debug build behaves as if the QA override
-  ///     is on, so a plain `flutter run` on a dev handset always reaches
-  ///     the gray part. The guard inside `composeVerdictBody` only
-  ///     injects when NO real attribution arrived, so a real Non-organic
-  ///     paid install in a debug build is still forwarded verbatim.
-  bool _shouldInjectTestAttribution() => _testOverride || kDebugMode;
-
-  Future<void> _toggleTestOverride() async {
-    final bool next = !widget.store.isTestShellOverride();
-    await widget.store.setTestShellOverride(next);
-    await widget.store.resetForFreshBoot();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(next
-              ? 'Test gray mode: ON — rebooting…'
-              : 'Test gray mode: OFF — rebooting…'),
-          duration: const Duration(milliseconds: 900),
-        ),
-      );
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => RoutePilot(
-          store: widget.store,
-          netProbe: widget.netProbe,
-          attribution: AttributionRelay(),
-          verdicts: widget.verdicts,
-          pushRelay: widget.pushRelay,
-        ),
-      ),
-    );
   }
 
   Future<void> _settle() =>
@@ -515,34 +483,25 @@ class _RoutePilotState extends State<RoutePilot>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
-                  // Long-press (~1.2 s) toggles the QA test-gray flag.
-                  // Invisible in the store listing; users won't stumble
-                  // on it accidentally.
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onLongPress: _toggleTestOverride,
-                    child: AnimatedBuilder(
-                      animation: _dotAnim,
-                      builder: (BuildContext context, _) {
-                        final int n = (_dotAnim.value * 4).floor() % 4;
-                        return Text(
-                          'Loading${'.' * n}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 3,
-                            height: 1.0,
-                            shadows: <Shadow>[
-                              Shadow(
-                                  color: AppColors.neonCyan, blurRadius: 14),
-                              Shadow(
-                                  color: AppColors.neonPink, blurRadius: 22),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                  AnimatedBuilder(
+                    animation: _dotAnim,
+                    builder: (BuildContext context, _) {
+                      final int n = (_dotAnim.value * 4).floor() % 4;
+                      return Text(
+                        'Loading${'.' * n}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 3,
+                          height: 1.0,
+                          shadows: <Shadow>[
+                            Shadow(color: AppColors.neonCyan, blurRadius: 14),
+                            Shadow(color: AppColors.neonPink, blurRadius: 22),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 14),
                   _NeonTrack(value: _progress),

@@ -36,6 +36,9 @@ android/app/*.jks
 android/app/*.keystore
 android/app/keystore.properties
 
+# Firebase config (delivered per-install, kept out of the repo)
+android/app/google-services.json
+
 # Web related
 lib/generated_plugin_registrant.dart
 

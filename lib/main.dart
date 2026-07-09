@@ -65,8 +65,7 @@ Future<void> main() async {
 
   final LocalStore store = LocalStore();
   await store.warmUp();
-  debugPrint('[Boot] LocalStore ready — storedMode=${store.readMode()} '
-      'override=${store.isTestShellOverride()}');
+  debugPrint('[Boot] LocalStore ready — storedMode=${store.readMode()}');
 
   final NetProbe netProbe = NetProbe();
   final AttributionRelay attribution = AttributionRelay();

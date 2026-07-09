@@ -15,10 +15,11 @@ import 'ua_stamp.dart';
 // fall back to them if the network later fails. Missing endpoint or
 // any error yields a rejected reply, which routes to the native game.
 //
-// Per .cursor/rules/gray_resume_recheck.mdc — the destination URL is
-// re-queried on EVERY returning launch. The cached URL is only used
-// when the fresh request fails, so partner landing rotations are
-// picked up automatically.
+// Config contract §"Последующие запуски": on a returning launch the
+// cached url is served directly while its `expires` TTL is still in the
+// future (no network call). A fresh verdict POST is only sent once the
+// link has expired; the cached url then remains the fallback if that
+// refresh request fails.
 // ============================================================
 
 const String _tag = '[VerdictRelay]';
@@ -46,7 +47,10 @@ class VerdictRelay {
       final response = await marbleWire
           .post(
             Uri.parse(endpoint),
-            headers: <String, String>{'Content-Type': 'application/json'},
+            headers: <String, String>{
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 15));

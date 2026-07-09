@@ -69,7 +69,7 @@ void main() {
   const String webkitTag = '537.36';
 
   // AppsFlyer Dev Key + Firebase project number (from google-services.json).
-  const String attributionKey = 'TAL6RnmCGYEgUQGPMrTwU';
+  const String attributionKey = 'TAL6RnmCGYEgUQGPMrTwUQ';
   const String messagingProject = '504784246070';
 
   print('=== Marble Descent glyph_packer ===\n');
