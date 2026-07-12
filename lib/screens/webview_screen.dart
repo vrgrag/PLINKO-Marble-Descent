@@ -43,7 +43,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
   void _createController() {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(AppColors.deepBlack)
+      ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) {
@@ -77,24 +77,24 @@ class _WebPageScreenState extends State<WebPageScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.deepBlack,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: AppColors.deepBlue,
+        backgroundColor: Colors.white,
         title: Text(widget.title,
             style: const TextStyle(
-              color: Colors.white,
+              color: Colors.black87,
               fontWeight: FontWeight.w800,
               letterSpacing: 1.2,
             )),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black87),
+        elevation: 0.5,
         bottom: _loading
             ? PreferredSize(
                 preferredSize: const Size.fromHeight(3),
                 child: LinearProgressIndicator(
                   value: _progress > 0 ? _progress / 100 : null,
                   minHeight: 3,
-                  backgroundColor: AppColors.deepBlack,
+                  backgroundColor: Colors.grey.shade200,
                   valueColor: const AlwaysStoppedAnimation(AppColors.neonCyan),
                 ),
               )
