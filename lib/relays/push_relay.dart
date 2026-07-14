@@ -58,8 +58,25 @@ class PushRelay {
   String? get token => _token;
 
   Future<void> boot() async {
-    if (_online) return;
+    // Fully booted and token present — nothing to do.
+    if (_online && _token != null) return;
+
     debugPrint('$_tag boot()');
+
+    // Infrastructure is already wired (listeners, channel) but the token was
+    // null on the first attempt (offline first-launch). Re-fetch now that the
+    // caller is presumably online again; no duplicate listener registrations.
+    if (_online && _fm != null) {
+      try {
+        _token = await _fm!.getToken();
+        debugPrint('$_tag token re-fetch → '
+            '${_token == null ? "null" : "${_token!.substring(0, 12)}…"}');
+      } catch (e) {
+        debugPrint('$_tag token re-fetch error: $e');
+      }
+      return;
+    }
+
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp();

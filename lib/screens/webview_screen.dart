@@ -43,7 +43,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
   void _createController() {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(AppColors.deepBlack)
+      ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) {
@@ -77,7 +77,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.deepBlack,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: AppColors.deepBlue,
         title: Text(widget.title,

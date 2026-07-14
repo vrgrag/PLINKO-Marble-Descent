@@ -2,7 +2,7 @@ name: marble_descent
 description: "Marble Descent — neon plinko-style marble arena"
 publish_to: 'none'
 
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ^3.9.0
