@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../bridge/insight.dart';
 import '../models/cosmetics.dart';
 import '../services/game_storage.dart';
 import '../theme.dart';
@@ -102,6 +103,7 @@ class _GameScreenState extends State<GameScreen>
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    Insight.screen('game');
     _ticker = createTicker(_onTick);
     _pulseCtrl = AnimationController(
       vsync: this,
@@ -334,6 +336,9 @@ class _GameScreenState extends State<GameScreen>
     if (_score > storage.bestScore) storage.bestScore = _score;
     if (elapsed > storage.bestSurvivalMs) storage.bestSurvivalMs = elapsed;
 
+    Insight.event('game_over');
+    Insight.tag('level', '$_distanceMeters');
+    if (newDistanceRecord) Insight.event('game_new_distance_record');
     storage.addCrystals(_crystalsThisGame);
     storage.gamesPlayed = storage.gamesPlayed + 1;
     storage.incrementDailyProgress(

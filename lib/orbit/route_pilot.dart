@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../bridge/insight.dart';
 import '../echo/runtime_mode.dart';
 import '../echo/verdict_echo.dart';
 import '../relays/attribution_relay.dart';
@@ -106,6 +107,7 @@ class _RoutePilotState extends State<RoutePilot>
     debugPrint('[RoutePilot] boot • kDebugMode=$kDebugMode '
         '• storedMode=${widget.store.readMode()}');
     widget.pushRelay.onTokenRotated = _repostAfterTokenSwap;
+    Insight.screen('loading');
     _drive();
   }
 
@@ -260,6 +262,7 @@ class _RoutePilotState extends State<RoutePilot>
     final String? cold = await widget.store.consumeColdPush();
     if (cold != null) {
       debugPrint('[RoutePilot] _resumeShell: cold push URL → $cold');
+      Insight.event('route_push_link');
       _lift(1.0);
       await _settle();
       _toShell(cold);
@@ -278,6 +281,7 @@ class _RoutePilotState extends State<RoutePilot>
     if (cached != null && cached.isNotEmpty && !widget.store.isExpired()) {
       debugPrint('[RoutePilot] _resumeShell: cached URL still valid '
           '(expires=${widget.store.readExpiry()}) → shell, skipping verdict');
+      Insight.event('route_cached_link');
       _lift(1.0);
       await _settle();
       _toShell(cached);
@@ -343,6 +347,16 @@ class _RoutePilotState extends State<RoutePilot>
       locale: locale,
       pushToken: widget.pushRelay.token,
     );
+    Insight.identify(
+      body['af_id']?.toString(),
+      tags: {
+        'af_status': body['af_status']?.toString() ?? '',
+        'media_source': body['media_source']?.toString() ?? '',
+        'campaign': body['campaign']?.toString() ?? '',
+        'os': body['os']?.toString() ?? '',
+        'locale': body['locale']?.toString() ?? '',
+      },
+    );
     return widget.verdicts.ask(body);
   }
 
@@ -372,6 +386,8 @@ class _RoutePilotState extends State<RoutePilot>
     await _settle();
     if (_routed || !mounted) return;
     _routed = true;
+    Insight.tag('run_mode', 'native');
+    Insight.event('route_native');
     Navigator.of(context).pushReplacement(
       PageRouteBuilder<void>(
         transitionDuration: const Duration(milliseconds: 460),
@@ -409,7 +425,20 @@ class _RoutePilotState extends State<RoutePilot>
   void _toShell(String destination) {
     if (_routed || !mounted) return;
     _routed = true;
-    final Widget target = widget.store.shouldInvite()
+    Insight.tag('run_mode', 'web');
+    Insight.event('route_web');
+    final bool showInvite = widget.store.shouldInvite();
+    if (!showInvite) {
+      Insight.tag(
+        'notif_permission',
+        widget.store.isPushGranted()
+            ? 'granted'
+            : widget.store.isPushOsDenied()
+                ? 'os_denied'
+                : 'snoozed',
+      );
+    }
+    final Widget target = showInvite
         ? InviteVeil(
             store: widget.store,
             pushRelay: widget.pushRelay,
@@ -430,6 +459,7 @@ class _RoutePilotState extends State<RoutePilot>
   void _toOffline() {
     if (_routed || !mounted) return;
     _routed = true;
+    Insight.event('route_offline');
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => OfflineVeil(

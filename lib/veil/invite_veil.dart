@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../bridge/insight.dart';
 import '../mint/slate_button.dart';
 import '../nexus/identity.dart';
 import '../orbit/asset_book.dart';
@@ -11,7 +12,7 @@ import 'web_veil.dart';
 /// Push opt-in promo shown once (or after the cooldown expires) before
 /// the WebView is opened. Accept fires the OS permission dialog; Skip
 /// arms the cooldown. Either action forwards the user to the WebView.
-class InviteVeil extends StatelessWidget {
+class InviteVeil extends StatefulWidget {
   const InviteVeil({
     super.key,
     required this.store,
@@ -25,16 +26,32 @@ class InviteVeil extends StatelessWidget {
   final NetProbe netProbe;
   final String destination;
 
+  @override
+  State<InviteVeil> createState() => _InviteVeilState();
+}
+
+class _InviteVeilState extends State<InviteVeil> {
+  @override
+  void initState() {
+    super.initState();
+    Insight.screen('push_invite');
+  }
+
   Future<void> _accept(BuildContext context) async {
-    final bool granted = await pushRelay.askPermission();
+    Insight.event('push_invite_accept');
+    final bool granted = await widget.pushRelay.askPermission();
+    Insight.tag('notif_permission', granted ? 'granted' : 'denied');
+    Insight.event(granted ? 'push_granted' : 'push_denied');
     if (!granted) {
-      await store.writeInviteMute(_cooldownDeadline());
+      await widget.store.writeInviteMute(_cooldownDeadline());
     }
     if (context.mounted) _forward(context);
   }
 
   Future<void> _skip(BuildContext context) async {
-    await store.writeInviteMute(_cooldownDeadline());
+    Insight.event('push_invite_skip');
+    Insight.tag('notif_permission', 'skipped');
+    await widget.store.writeInviteMute(_cooldownDeadline());
     if (context.mounted) _forward(context);
   }
 
@@ -46,10 +63,10 @@ class InviteVeil extends StatelessWidget {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => WebVeil(
-          destination: destination,
-          store: store,
-          pushRelay: pushRelay,
-          netProbe: netProbe,
+          destination: widget.destination,
+          store: widget.store,
+          pushRelay: widget.pushRelay,
+          netProbe: widget.netProbe,
         ),
       ),
     );

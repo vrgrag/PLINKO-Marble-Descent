@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../bridge/insight.dart';
 import '../mint/slate_button.dart';
 import '../orbit/asset_book.dart';
 
@@ -19,7 +20,14 @@ class OfflineVeil extends StatefulWidget {
 class _OfflineVeilState extends State<OfflineVeil> {
   bool _spinning = false;
 
+  @override
+  void initState() {
+    super.initState();
+    Insight.screen('offline');
+  }
+
   Future<void> _retry() async {
+    Insight.event('offline_retry');
     if (_spinning) return;
     setState(() => _spinning = true);
     await Future<void>.delayed(const Duration(milliseconds: 550));

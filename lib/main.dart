@@ -1,9 +1,11 @@
+import 'package:clarity_flutter/clarity_flutter.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'bridge/insight.dart';
 import 'orbit/orbit_app.dart';
 import 'relays/attribution_relay.dart';
 import 'relays/local_store.dart';
@@ -73,11 +75,14 @@ Future<void> main() async {
   final PushRelay pushRelay = PushRelay(store);
   debugPrint('[Boot] relays constructed — launching OrbitApp');
 
-  runApp(OrbitApp(
-    store: store,
-    netProbe: netProbe,
-    attribution: attribution,
-    verdicts: verdicts,
-    pushRelay: pushRelay,
+  runApp(ClarityWidget(
+    clarityConfig: Insight.config,
+    app: OrbitApp(
+      store: store,
+      netProbe: netProbe,
+      attribution: attribution,
+      verdicts: verdicts,
+      pushRelay: pushRelay,
+    ),
   ));
 }

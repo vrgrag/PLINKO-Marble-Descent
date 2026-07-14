@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../bridge/insight.dart';
 import '../models/cosmetics.dart';
 import '../services/game_storage.dart';
 import '../theme.dart';
@@ -22,6 +23,7 @@ class _MenuScreenState extends State<MenuScreen> {
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    Insight.screen('menu');
   }
 
   Future<void> _openGame() async {

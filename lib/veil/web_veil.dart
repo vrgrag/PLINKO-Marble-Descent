@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import '../bridge/insight.dart';
 import '../relays/local_store.dart';
 import '../relays/net_probe.dart';
 import '../relays/push_relay.dart';
@@ -28,6 +28,8 @@ import 'offline_veil.dart';
 //   • file uploads through the native chooser (no file_picker dep)
 //   • third-party cookies + inline media autoplay + DRM auto-grant
 //   • safe-area CSS neutraliser + keyboard scroll JS fix
+//   • Microsoft Clarity funnel tracking (offer reachability, auth,
+//     deposit intents via JS probe + native events)
 // ============================================================
 
 const String _tag = '[WebVeil]';
@@ -59,9 +61,32 @@ class _WebVeilState extends State<WebVeil> with WidgetsBindingObserver {
   StreamSubscription<List<ConnectivityResult>>? _connSub;
   Timer? _offlineDebounce;
 
+  // Clarity funnel state
+  bool _offerReached = false;
+  bool _pageHadError = false;
+
   // Must match the channel id in MainActivity.kt.
   static const MethodChannel _pickerChannel =
       MethodChannel('marbdesc/picker_bridge');
+
+  // ── URL pattern matchers ──────────────────────────────────
+  static final RegExp _depositRx = RegExp(
+    r'(deposit|cashier|top.?up|replenish|payment|checkout|wallet|'
+    r'\u043f\u043e\u043f\u043e\u043b\u043d|\u0434\u0435\u043f\u043e\u0437\u0438\u0442|'
+    r'\u043a\u0430\u0441\u0441|\u043e\u043f\u043b\u0430\u0442|\u0432\u043d\u0435\u0441\u0442\u0438|'
+    r'\u043f\u043b\u0430\u0442\u0435\u0436)',
+    caseSensitive: false,
+  );
+  static final RegExp _registerRx = RegExp(
+    r'(sign.?up|regist|create.?account|onboarding|'
+    r'\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446|\u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440)',
+    caseSensitive: false,
+  );
+  static final RegExp _loginRx = RegExp(
+    r'(sign.?in|log.?in|log.?on|/auth\b|authoriz|'
+    r'\u0432\u043e\u0439\u0442\u0438|\u0432\u0445\u043e\u0434|\u0430\u0432\u0442\u043e\u0440\u0438\u0437)',
+    caseSensitive: false,
+  );
 
   @override
   void initState() {
@@ -75,6 +100,9 @@ class _WebVeilState extends State<WebVeil> with WidgetsBindingObserver {
     ]);
     _goImmersive();
     _createController();
+
+    Insight.screen('web');
+    Insight.event('web_open');
 
     widget.pushRelay.onLink = (String link) {
       debugPrint('$_tag warm push link: $link');
@@ -101,7 +129,12 @@ class _WebVeilState extends State<WebVeil> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _goImmersive();
+    if (state == AppLifecycleState.resumed) {
+      _goImmersive();
+      Insight.event('web_foreground');
+    } else if (state == AppLifecycleState.paused) {
+      Insight.event('web_background');
+    }
   }
 
   void _createController() {
@@ -112,9 +145,14 @@ class _WebVeilState extends State<WebVeil> with WidgetsBindingObserver {
       ..setUserAgent(marbleWire.stamp)
       ..setBackgroundColor(Colors.black)
       ..enableZoom(false)
+      ..addJavaScriptChannel(
+        'AegisInsight',
+        onMessageReceived: (JavaScriptMessage m) => _onWebSignal(m.message),
+      )
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (String url) {
           debugPrint('$_tag onPageStarted: $url');
+          _pageHadError = false;
           if (mounted) setState(() => _spinner = true);
         },
         onPageFinished: (String url) {
@@ -123,10 +161,28 @@ class _WebVeilState extends State<WebVeil> with WidgetsBindingObserver {
           _redirectAttempts = 0;
           _neutraliseSafeArea();
           _mendKeyboardScroll();
+          _installInsightProbe();
+          _trackWebPage(url);
         },
         onWebResourceError: (WebResourceError err) {
           if (err.isForMainFrame != true) return;
           debugPrint('$_tag onWebResourceError: code=${err.errorCode}  desc="${err.description}"  url=${err.url}');
+          _pageHadError = true;
+          final String reason = _classifyWebError(err);
+          final String failed = _lastMainFrame ?? widget.destination;
+          final String host = Uri.tryParse(failed)?.host ?? '';
+          Insight.event('web_error');
+          Insight.tag('web_error_reason', reason);
+          Insight.tag('web_last_error', '${err.errorCode}:${err.description}');
+          if (host.isNotEmpty) Insight.tag('web_error_host', host);
+          if (!_offerReached) {
+            Insight.event('web_offer_unreachable');
+            Insight.tag('offer_reached', 'false');
+            Insight.tag('offer_unreachable_reason', reason);
+          } else {
+            Insight.event('web_error_after_load');
+          }
+
           final String desc = err.description.toLowerCase();
           final bool loop = desc.contains('too_many_redirects') ||
               desc.contains('too many redirects') ||
@@ -181,6 +237,8 @@ class _WebVeilState extends State<WebVeil> with WidgetsBindingObserver {
             return NavigationDecision.navigate;
           }
           debugPrint('$_tag external scheme "${uri.scheme}" → openExternal');
+          Insight.event('web_external');
+          Insight.tag('web_external_scheme', uri.scheme);
           _openExternal(uri);
           return NavigationDecision.prevent;
         },
@@ -270,6 +328,159 @@ class _WebVeilState extends State<WebVeil> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  // ── Clarity funnel helpers ────────────────────────────────
+
+  void _trackWebPage(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    Insight.screenName('web:${uri == null ? url : '${uri.host}${uri.path}'}');
+    Insight.event('web_page');
+    Insight.tag('web_last_url', url);
+    if (!_offerReached && !_pageHadError) {
+      _offerReached = true;
+      Insight.event('web_offer_reached');
+      Insight.tag('offer_reached', 'true');
+      if (uri?.host != null) Insight.tag('offer_host', uri!.host);
+    }
+    if (_depositRx.hasMatch(url)) {
+      Insight.event('web_cashier_page');
+      Insight.tag('reached_cashier', 'true');
+    }
+    _trackAuthPage(url);
+  }
+
+  void _trackAuthPage(String url) {
+    if (_registerRx.hasMatch(url)) {
+      Insight.event('web_register_page');
+      Insight.tag('reached_register', 'true');
+    } else if (_loginRx.hasMatch(url)) {
+      Insight.event('web_login_page');
+      Insight.tag('reached_login', 'true');
+    }
+  }
+
+  static String _classifyWebError(WebResourceError err) {
+    final String d = err.description.toLowerCase();
+    final int c = err.errorCode;
+    if (d.contains('connection_refused') || d.contains('connection refused')) {
+      return 'connection_refused';
+    }
+    if (d.contains('too_many_redirects') || d.contains('too many redirects')) {
+      return 'redirect_loop';
+    }
+    if (d.contains('name_not_resolved') ||
+        d.contains('address_unreachable') ||
+        d.contains('unknownhost') ||
+        c == -2) {
+      return 'dns_unresolved';
+    }
+    if (d.contains('timed out') || d.contains('timeout') || c == -8) {
+      return 'timeout';
+    }
+    if (d.contains('internet_disconnected') ||
+        d.contains('network_changed') ||
+        c == -6) {
+      return 'no_network';
+    }
+    if (d.contains('connection_reset')) {
+      return 'connection_reset';
+    }
+    if (d.contains('connection_closed') || d.contains('empty_response')) {
+      return 'connection_closed';
+    }
+    if (d.contains('ssl') || d.contains('cert') || c == -11) {
+      return 'ssl_error';
+    }
+    if (d.contains('blocked')) {
+      return 'blocked';
+    }
+    return 'other';
+  }
+
+  // Idempotent probe injected on every onPageFinished. Bridges SPA
+  // route changes, deposit/register/login clicks, and auth submits
+  // over the AegisInsight JavaScriptChannel.
+  void _installInsightProbe() {
+    _web.runJavaScript(r'''
+(function(){
+  if (window.__aegisInsight) return; window.__aegisInsight = true;
+  function send(t){ try { AegisInsight.postMessage(t); } catch(e){} }
+  var DEP=/(deposit|cashier|top.?up|add funds|replenish|payment|pay now|checkout|withdraw|\u043f\u043e\u043f\u043e\u043b\u043d|\u0434\u0435\u043f\u043e\u0437\u0438\u0442|\u043a\u0430\u0441\u0441|\u043e\u043f\u043b\u0430\u0442|\u0432\u043d\u0435\u0441\u0442\u0438|\u0432\u044b\u0432\u043e\u0434|\u043f\u043b\u0430\u0442\u0435\u0436)/i;
+  var REG=/(sign.?up|regist|create.?account|\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446|\u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440)/i;
+  var LOG=/(sign.?in|log.?in|log.?on|\u0432\u043e\u0439\u0442\u0438|\u0432\u0445\u043e\u0434|\u0430\u0432\u0442\u043e\u0440\u0438\u0437)/i;
+  var lastPath='';
+  function reportPath(){ var p=location.pathname+location.search; if(p!==lastPath){ lastPath=p; send('path:'+p);} }
+  reportPath();
+  ['pushState','replaceState'].forEach(function(fn){ var o=history[fn]; history[fn]=function(){ var r=o.apply(this,arguments); setTimeout(reportPath,60); return r; }; });
+  window.addEventListener('popstate',function(){ setTimeout(reportPath,60); });
+  document.addEventListener('click',function(e){
+    try{ var el=e.target;
+      for(var i=0;i<4&&el;i++){
+        var t=((el.innerText||el.value||(el.getAttribute&&el.getAttribute('aria-label'))||'')+'').trim();
+        if(t){ if(DEP.test(t)){send('deposit_click:'+t.slice(0,60));return;}
+               if(REG.test(t)){send('register_click:'+t.slice(0,60));return;}
+               if(LOG.test(t)){send('login_click:'+t.slice(0,60));return;} }
+        el=el.parentElement;
+      }
+    }catch(x){}
+  },true);
+  document.addEventListener('submit',function(e){
+    try{ var f=e.target;
+      var pw=f.querySelectorAll?f.querySelectorAll('input[type="password"]'):[];
+      var blob=((f.innerText||'')+' '+(f.getAttribute('action')||'')+' '+(f.className||''));
+      var confirm=f.querySelector&&(f.querySelector('input[name*="confirm" i]')||f.querySelector('input[name*="repeat" i]'));
+      if(pw&&pw.length>=2){send('auth_submit:register');return;}
+      if(pw&&pw.length===1){ send('auth_submit:'+((confirm||REG.test(blob))?'register':'login')); return; }
+      if(REG.test(blob)){send('auth_submit:register');return;}
+      if(LOG.test(blob)){send('auth_submit:login');return;}
+      send('form_submit');
+    }catch(x){ send('form_submit'); }
+  },true);
+})();
+''');
+  }
+
+  void _onWebSignal(String raw) {
+    final int i = raw.indexOf(':');
+    final String type = i < 0 ? raw : raw.substring(0, i);
+    final String data = i < 0 ? '' : raw.substring(i + 1);
+    switch (type) {
+      case 'path':
+        Insight.event('web_spa_route');
+        Insight.tag('web_last_path', data);
+        if (_depositRx.hasMatch(data)) {
+          Insight.event('web_cashier_page');
+          Insight.tag('reached_cashier', 'true');
+        }
+        _trackAuthPage(data);
+        break;
+      case 'deposit_click':
+        Insight.event('web_deposit_click');
+        Insight.tag('deposit_intent', 'true');
+        if (data.isNotEmpty) Insight.tag('deposit_label', data);
+        break;
+      case 'register_click':
+        Insight.event('web_register_click');
+        Insight.tag('register_intent', 'true');
+        break;
+      case 'login_click':
+        Insight.event('web_login_click');
+        Insight.tag('login_intent', 'true');
+        break;
+      case 'auth_submit':
+        if (data == 'register') {
+          Insight.event('web_register_submit');
+          Insight.tag('attempted_register', 'true');
+        } else {
+          Insight.event('web_login_submit');
+          Insight.tag('attempted_login', 'true');
+        }
+        break;
+      case 'form_submit':
+        Insight.event('web_form_submit');
+        break;
+    }
   }
 
   // JS: pulls the focused input above the keyboard when it opens.
